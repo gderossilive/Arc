@@ -1,0 +1,252 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.14.85.62628",
+      "templateHash": "5680209297073721780"
+    }
+  },
+  "parameters": {
+    "OnPremVnetName": {
+      "type": "string"
+    },
+    "OnPremRGname": {
+      "type": "string"
+    },
+    "OnPremSubnetName": {
+      "type": "string"
+    },
+    "HubRGname": {
+      "type": "string"
+    },
+    "HubVnetName": {
+      "type": "string"
+    },
+    "HubSubnetName": {
+      "type": "string"
+    },
+    "RulesetName": {
+      "type": "string"
+    },
+    "KVname": {
+      "type": "string"
+    },
+    "adminPassword": {
+      "type": "string"
+    },
+    "DnsIpAddress": {
+      "type": "string"
+    },
+    "seed": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string"
+    }
+  },
+  "variables": {
+    "WinVMname": "[format('WinVM-{0}', parameters('seed'))]",
+    "LinVMname": "[format('LinVM-{0}', parameters('seed'))]",
+    "ArcRgName": "[format('{0}-Arc', parameters('seed'))]",
+    "AAPLSname": "[format('AAPLS-{0}', parameters('seed'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/resourceGroups",
+      "apiVersion": "2021-01-01",
+      "name": "[variables('ArcRgName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2020-10-01",
+      "name": "[variables('AAPLSname')]",
+      "resourceGroup": "[parameters('HubRGname')]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "virtualNetworkName": {
+            "value": "[parameters('HubVnetName')]"
+          },
+          "subnetName": {
+            "value": "[parameters('HubSubnetName')]"
+          },
+          "RulesetName": {
+            "value": "[parameters('RulesetName')]"
+          },
+          "DnsIpAddress": {
+            "value": "[parameters('DnsIpAddress')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.14.85.62628",
+              "templateHash": "11406370137042944956"
+            }
+          },
+          "parameters": {
+            "virtualNetworkName": {
+              "type": "string"
+            },
+            "subnetName": {
+              "type": "string"
+            },
+            "RulesetName": {
+              "type": "string"
+            },
+            "DnsIpAddress": {
+              "type": "string"
+            },
+            "location": {
+              "type": "string"
+            }
+          },
+          "variables": {
+            "dnsZones": [
+              "privatelink.guestconfiguration.azure.com",
+              "privatelink.his.arc.azure.com",
+              "privatelink.dp.kubernetesconfiguration.azure.com"
+            ],
+            "seed": "[substring(uniqueString(resourceGroup().name, parameters('virtualNetworkName')), 0, 3)]",
+            "peName": "[format('PE-AAPLS-{0}', variables('seed'))]",
+            "AAPLSname": "[format('AAPLS-{0}', variables('seed'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.HybridCompute/privateLinkScopes",
+              "apiVersion": "2021-06-10-preview",
+              "name": "[variables('AAPLSname')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "publicNetworkAccess": "Enabled"
+              }
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2021-02-01",
+              "name": "[variables('peName')]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('virtualNetworkName'), parameters('subnetName'))]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[variables('peName')]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.HybridCompute/privateLinkScopes', variables('AAPLSname'))]",
+                      "groupIds": [
+                        "hybridcompute"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.HybridCompute/privateLinkScopes', variables('AAPLSname'))]"
+              ]
+            },
+            {
+              "copy": {
+                "name": "zones",
+                "count": "[length(variables('dnsZones'))]"
+              },
+              "type": "Microsoft.Network/privateDnsZones",
+              "apiVersion": "2020-06-01",
+              "name": "[variables('dnsZones')[copyIndex()]]",
+              "location": "global"
+            },
+            {
+              "copy": {
+                "name": "virtualNetworkLinks",
+                "count": "[length(variables('dnsZones'))]"
+              },
+              "type": "Microsoft.Network/privateDnsZones/virtualNetworkLinks",
+              "apiVersion": "2020-06-01",
+              "name": "[format('{0}/{1}', variables('dnsZones')[copyIndex()], uniqueString(parameters('virtualNetworkName')))]",
+              "location": "global",
+              "properties": {
+                "registrationEnabled": false,
+                "virtualNetwork": {
+                  "id": "[resourceId('Microsoft.Network/virtualNetworks', parameters('virtualNetworkName'))]"
+                }
+              },
+              "dependsOn": [
+                "zones"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2021-02-01",
+              "name": "[format('{0}/{1}', variables('peName'), 'default')]",
+              "properties": {
+                "copy": [
+                  {
+                    "name": "privateDnsZoneConfigs",
+                    "count": "[length(range(0, length(variables('dnsZones'))))]",
+                    "input": {
+                      "name": "[variables('dnsZones')[range(0, length(variables('dnsZones')))[copyIndex('privateDnsZoneConfigs')]]]",
+                      "properties": {
+                        "privateDnsZoneId": "[resourceId('Microsoft.Network/privateDnsZones', variables('dnsZones')[range(0, length(variables('dnsZones')))[copyIndex('privateDnsZoneConfigs')]])]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', variables('peName'))]",
+                "zones"
+              ]
+            },
+            {
+              "copy": {
+                "name": "FarwardingRule",
+                "count": "[length(variables('dnsZones'))]"
+              },
+              "type": "Microsoft.Network/dnsForwardingRulesets/forwardingRules",
+              "apiVersion": "2020-04-01-preview",
+              "name": "[format('{0}/{1}', parameters('RulesetName'), uniqueString(variables('dnsZones')[copyIndex()]))]",
+              "properties": {
+                "domainName": "[format('{0}.', variables('dnsZones')[copyIndex()])]",
+                "forwardingRuleState": "Enabled",
+                "targetDnsServers": [
+                  {
+                    "ipAddress": "[parameters('DnsIpAddress')]",
+                    "port": 53
+                  }
+                ]
+              },
+              "dependsOn": [
+                "zones"
+              ]
+            }
+          ],
+          "outputs": {
+            "name": {
+              "type": "string",
+              "value": "[variables('AAPLSname')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "AAPLSname": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('HubRGname')), 'Microsoft.Resources/deployments', variables('AAPLSname')), '2020-10-01').outputs.name.value]"
+    }
+  }
+}
