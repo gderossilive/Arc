@@ -1,3 +1,10 @@
+$starttime = Get-Date
+$starttimeString = $($starttime.ToString("yyMMdd-HHmm"))
+$transcriptFile = "$PSScriptRoot\aksedgedlog-$starttimeString.txt"
+Start-Transcript -Path $transcriptFile
+
+Set-ExecutionPolicy Bypass -Scope Process -Force
+
 $Packages = 'googlechrome',
             'notepadplusplus'
  
@@ -18,3 +25,10 @@ Else {
         choco install $PackageName -y
     }
 }
+
+$endtime = Get-Date
+$duration = ($endtime - $starttime)
+Write-Host "Duration: $($duration.Hours) hrs $($duration.Minutes) mins $($duration.Seconds) seconds"
+Stop-Transcript | Out-Null
+Pop-Location
+exit 0
